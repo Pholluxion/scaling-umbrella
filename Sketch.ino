@@ -24,13 +24,12 @@ const uint16_t websocket_server_port1 = 44691;
 using namespace websockets;
 
 WebsocketsClient client;
+WebsocketsClient dataClient;
 WebsocketsClient stateClient;
 
 WiFiClient wifiClient;
 
 bool sendImage = false;
-
-
 
 void setup() {
   Serial.begin(115200);
@@ -66,10 +65,14 @@ void setup() {
   client.onMessage(onMessageCallback);
   client.onEvent(onEventsCallback);
 
+  dataClient.onMessage(onMessageCallback);
+  dataClient.onEvent(onEventsCallback)
+
   stateClient.onMessage(onStateMessageCallback);
   stateClient.onEvent(onStateEventsCallback);
 
-  while (!stateClient.connect(websocket_server_host, websocket_server_port1, "/ws")) { delay(500); }
+  while (!stateClient.connect(websocket_server_host, websocket_server_port1, "/ws")) { }
+  while (!dataClient.connect(websocket_server_host, websocket_server_port1, "/data_ws")) { }
   while (!client.connect(websocket_server_host, websocket_server_port1, "/image_ws")) { }
 }
 
@@ -149,7 +152,7 @@ void US()
   Serial.print(distancia);
   Serial.println(" cm");
 
-  stateClient.send("distancia" + String(distancia));
+  dataClient.send("distancia" + String(distancia));
 }
 
 
