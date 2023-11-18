@@ -29,6 +29,7 @@ using namespace websockets;
 WebsocketsClient client;
 WebsocketsClient dataClient;
 WebsocketsClient stateClient;
+WebsocketsClient photoClient;
 
 WiFiClient wifiClient;
 
@@ -47,6 +48,8 @@ void setup() {
   pinMode(TRIG_LEVEL, OUTPUT);
 
   servoMotor.attach(SERVO_PIN);
+
+  servoMotor.write(0);
 
   Serial.print("\nConnecting to ");
   Serial.println(ssid);
@@ -78,54 +81,49 @@ void setup() {
   stateClient.onMessage(onStateMessageCallback);
   stateClient.onEvent(onStateEventsCallback);
 
+  photoClient.onMessage(onMessageCallback);
+  photoClient.onEvent(onEventsCallback);
+
   while (!stateClient.connect(websocket_server_host, websocket_server_port1, "/ws")) { }
   while (!dataClient.connect(websocket_server_host, websocket_server_port1, "/data_ws")) { }
+  while (!photoClient.connect(websocket_server_host, websocket_server_port1, "/photo_ws")) { }
   while (!client.connect(websocket_server_host, websocket_server_port1, "/image_ws")) { }
 }
 
 void loop() {
 
   stateClient.poll();
+  dataClient.poll();
   client.poll();
-  servoMotor.write(0);
 
-  US();
+  camera_fb_t* fb = esp_camera_fb_get();
 
-  
+  if (!fb) {
+    esp_camera_fb_return(fb);
+    Serial.println("\nesp_camera_fb_get error");
+    return;
+  }
+
+  if (fb->format != PIXFORMAT_JPEG) {
+    Serial.println("\nPIXFORMAT_JPEG error");
+    return;
+  }
+
+  esp_camera_fb_return(fb);
+
   if ( distanceProx < 20) {
     
+    photoClient.sendBinary((const char*)fb->buf, fb->len);
     digitalWrite(LED_BUILTIN, HIGH);
     servoMotor.write(180);
     delay(2000);
     servoMotor.write(0);
-    delay(2000);
-
-    camera_fb_t* fb = NULL;
-
-    fb = esp_camera_fb_get();
-
-    if (!fb) {
-      esp_camera_fb_return(fb);
-      Serial.println("\nesp_camera_fb_get error");
-      return;
-    }
-
-    if (fb->format != PIXFORMAT_JPEG) {
-      Serial.println("\nPIXFORMAT_JPEG error");
-      return;
-    }
-
-    client.sendBinary((const char*)fb->buf, fb->len);
-    esp_camera_fb_return(fb);
-  
     digitalWrite(LED_BUILTIN, LOW);
- 
-  
+
   }
 
   if (sendImage) {
-    
-    camera_fb_t* fb = esp_camera_fb_get();
+      camera_fb_t* fb = esp_camera_fb_get();
 
     if (!fb) {
       esp_camera_fb_return(fb);
@@ -141,10 +139,14 @@ void loop() {
     client.sendBinary((const char*)fb->buf, fb->len);
     esp_camera_fb_return(fb);
   }
+
+  US();
 
   delay(500);
  
 }
+
+
 
 void US()
 {
@@ -186,6 +188,7 @@ void US()
 
 void onStateMessageCallback(WebsocketsMessage message) {
   Serial.println(message.data());
+
   String data = message.data();
   if (data.length() > 20) {
     return;
@@ -195,9 +198,6 @@ void onStateMessageCallback(WebsocketsMessage message) {
   if (index != -1) {
     String key = data.substring(0, index);
     String value = data.substring(index + 1);
-
-      Serial.println(key);
-
 
     if (key == "ON_BOARD_LED_1") {
       if (value.toInt() == 1) {
