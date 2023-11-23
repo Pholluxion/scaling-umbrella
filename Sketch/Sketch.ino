@@ -8,12 +8,15 @@
 Servo servoMotor;
 
 const int SERVO_PIN = 2;
-const int IF_PIN = 42;
 
-const int  Pecho = 40;
-const int  Ptrig = 39;
+const int ECHO_PROX = 40;
+const int TRIG_PROX = 39;
+const int ECHO_LEVEL = 41;
+const int TRIG_LEVEL = 42;
 
-float duracion, distancia;
+const int TEMP_PIN = 19;
+
+float durationProx, distanceProx, durationLevel, distanceLevel, temp, valor;
 
 const char* ssid = "Daniel";
 const char* password = "d4t42023";
@@ -26,6 +29,7 @@ using namespace websockets;
 WebsocketsClient client;
 WebsocketsClient dataClient;
 WebsocketsClient stateClient;
+WebsocketsClient photoClient;
 
 WiFiClient wifiClient;
 
@@ -35,11 +39,15 @@ void setup() {
   Serial.begin(115200);
 
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(IF_PIN, INPUT);
-  pinMode(Pecho, INPUT);
-  pinMode(Ptrig, OUTPUT);
+  //pinMode(IF_PIN, INPUT);
+  pinMode(ECHO_PROX, INPUT);
+  pinMode(TRIG_PROX, OUTPUT);
+  pinMode(ECHO_LEVEL, INPUT);
+  pinMode(TRIG_LEVEL, OUTPUT);
 
   servoMotor.attach(SERVO_PIN);
+
+  servoMotor.write(0);
 
   Serial.print("\nConnecting to ");
   Serial.println(ssid);
@@ -66,58 +74,54 @@ void setup() {
   client.onEvent(onEventsCallback);
 
   dataClient.onMessage(onMessageCallback);
-  dataClient.onEvent(onEventsCallback)
+  dataClient.onEvent(onEventsCallback);
 
   stateClient.onMessage(onStateMessageCallback);
   stateClient.onEvent(onStateEventsCallback);
 
+  photoClient.onMessage(onMessageCallback);
+  photoClient.onEvent(onEventsCallback);
+
   while (!stateClient.connect(websocket_server_host, websocket_server_port1, "/ws")) { }
   while (!dataClient.connect(websocket_server_host, websocket_server_port1, "/data_ws")) { }
+  while (!photoClient.connect(websocket_server_host, websocket_server_port1, "/photo_ws")) { }
   while (!client.connect(websocket_server_host, websocket_server_port1, "/image_ws")) { }
 }
 
 void loop() {
 
   stateClient.poll();
+  dataClient.poll();
   client.poll();
-  servoMotor.write(0);
 
-  US();
+  camera_fb_t* fb = esp_camera_fb_get();
 
-  
-  if ( digitalRead(IF_PIN) == LOW) {
+  if (!fb) {
+    esp_camera_fb_return(fb);
+    Serial.println("\nesp_camera_fb_get error");
+    return;
+  }
+
+  if (fb->format != PIXFORMAT_JPEG) {
+    Serial.println("\nPIXFORMAT_JPEG error");
+    return;
+  }
+
+  esp_camera_fb_return(fb);
+
+  if ( distanceProx < 20) {
     
+    photoClient.sendBinary((const char*)fb->buf, fb->len);
     digitalWrite(LED_BUILTIN, HIGH);
     servoMotor.write(180);
     delay(2000);
     servoMotor.write(0);
-    delay(2000);
-  
-    camera_fb_t* fb = esp_camera_fb_get();
-
-    if (!fb) {
-      esp_camera_fb_return(fb);
-      Serial.println("\nesp_camera_fb_get error");
-      return;
-    }
-
-    if (fb->format != PIXFORMAT_JPEG) {
-      Serial.println("\nPIXFORMAT_JPEG error");
-      return;
-    }
-
-    client.sendBinary((const char*)fb->buf, fb->len);
-    esp_camera_fb_return(fb);
-
- 
-  
-  } else {
     digitalWrite(LED_BUILTIN, LOW);
+
   }
 
   if (sendImage) {
-    
-    camera_fb_t* fb = esp_camera_fb_get();
+      camera_fb_t* fb = esp_camera_fb_get();
 
     if (!fb) {
       esp_camera_fb_return(fb);
@@ -133,31 +137,56 @@ void loop() {
     client.sendBinary((const char*)fb->buf, fb->len);
     esp_camera_fb_return(fb);
   }
+
+  US();
 
   delay(500);
  
 }
 
+
+
 void US()
 {
-  digitalWrite(Ptrig, LOW);
+  digitalWrite(TRIG_PROX, LOW);
   delayMicroseconds(5);
-  digitalWrite(Ptrig, HIGH);
+  digitalWrite(TRIG_PROX, HIGH);
   delayMicroseconds(10);
-  digitalWrite(Ptrig, LOW);
+  digitalWrite(TRIG_PROX, LOW);
   
-  duracion = pulseIn(Pecho, HIGH);
-  distancia = duracion * 0.017;
-  Serial.print("Distancia: ");
-  Serial.print(distancia);
+  durationProx = pulseIn(ECHO_PROX, HIGH);
+  distanceProx = durationProx * 0.017;
+  Serial.print("Distancie Prox: ");
+  Serial.print(distanceProx);
   Serial.println(" cm");
 
-  dataClient.send("distancia" + String(distancia));
+  digitalWrite(TRIG_LEVEL, LOW);
+  delayMicroseconds(5);
+  digitalWrite(TRIG_LEVEL, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_LEVEL, LOW);
+
+  durationLevel = pulseIn(ECHO_LEVEL, HIGH);
+  distanceLevel = durationLevel * 0.017;
+  Serial.print("Distance Level: ");
+  Serial.print(distanceLevel);
+  Serial.println(" cm");
+
+  // TEMPERATURA
+
+  valor = analogRead(TEMP_PIN);
+  temp = (5 * valor * 100)/1023 - 50;
+  Serial.print("Valor de temperatura: ");
+  Serial.println(temp);
+
+  dataClient.send(String(distanceProx) + ";" + String(distanceLevel) + ";" + String(temp));
+  
 }
 
 
 void onStateMessageCallback(WebsocketsMessage message) {
   Serial.println(message.data());
+
   String data = message.data();
   if (data.length() > 20) {
     return;
@@ -167,9 +196,6 @@ void onStateMessageCallback(WebsocketsMessage message) {
   if (index != -1) {
     String key = data.substring(0, index);
     String value = data.substring(index + 1);
-
-      Serial.println(key);
-
 
     if (key == "ON_BOARD_LED_1") {
       if (value.toInt() == 1) {
