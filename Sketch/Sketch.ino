@@ -14,6 +14,9 @@ const int TRIG_PROX = 39;
 const int ECHO_LEVEL = 41;
 const int TRIG_LEVEL = 42;
 
+const int LED_RED = 38;
+const int LED_GREEN = 37;
+
 const int TEMP_PIN = 19;
 
 float durationProx, distanceProx, durationLevel, distanceLevel, temp, valor;
@@ -46,6 +49,8 @@ void setup() {
   pinMode(TRIG_PROX, OUTPUT);
   pinMode(ECHO_LEVEL, INPUT);
   pinMode(TRIG_LEVEL, OUTPUT);
+  pinMode(LED_RED, OUTPUT);
+  pinMode(LED_GREEN, OUTPUT);
 
   servoMotor.attach(SERVO_PIN);
 
@@ -54,6 +59,8 @@ void setup() {
   Serial.print("\nConnecting to ");
   Serial.println(ssid);
 
+  digitalWrite(LED_RED, HIGH);
+
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
@@ -61,14 +68,20 @@ void setup() {
     Serial.print(".");
   }
 
+  digitalWrite(LED_RED, LOW);
+  //digitalWrite(LED_GREEN, HIGH);
+
   Serial.println("\nWiFi connected");
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
 
   if (cameraSetup() == 1) {
     Serial.print("\ncameraSetup: OK");
+    digitalWrite(LED_GREEN, HIGH);
   } else {
     Serial.print("\ncameraSetup: ERROR");
+    digitalWrite(LED_GREEN, LOW);
+    digitalWrite(LED_RED, HIGH);
     return;
   }
 
